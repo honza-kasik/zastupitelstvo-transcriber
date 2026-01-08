@@ -1,0 +1,13 @@
+= How to use
+
+. Prepare input
+. Change value of input file in `docker-compose.yml`
+. Create `.env` file with `HF_TOKEN` to be able to download transcribe and diarization models
+. Build and run containers:
++
+[source,bash]
+----
+docker-compose build
+docker-compose up
+----
+. Wait 10–12 hours on CPU
