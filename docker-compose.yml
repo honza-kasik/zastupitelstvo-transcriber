@@ -1,0 +1,19 @@
+services:
+  transcriber:
+    build: .
+    container_name: whisper_diarization_cpu
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - hf-cache:/root/.cache/huggingface
+    volumes:
+      hf-cache:
+    environment:
+      - WHISPER_MODEL=medium
+      - OMP_NUM_THREADS=12
+      - MKL_NUM_THREADS=12
+      - TORCH_NUM_THREADS=12
+    command: >
+      python transcribe.py
+      /app/input/22_zasedani_Zastupitelstva_mesta_Litovel.opus
+      /app/output/prepis.md
