@@ -17,7 +17,7 @@ import ufal.morphodita as morphodita
 # =========================
 
 MORPHODITA_MODEL = "czech-morfflex2.1-pdtc2.0-250909.tagger"
-TRANSCRIPT_FILE = "prepis.md"
+TRANSCRIPT_FILE = "prepis23.md"
 
 SEGMENT_LEN = 300      # 5 min
 SEGMENT_OVERLAP = 120  # 2 min

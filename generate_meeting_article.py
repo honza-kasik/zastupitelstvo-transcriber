@@ -11,8 +11,8 @@ import yaml
 TOPICS_FILE = "llm_input.json"   # vstup: seznam témat
 OUTPUT_MD = "meeting.md"
 
-MEETING_DATE = "2024-09-12"
-MEETING_NUMBER = 12
+MEETING_DATE = "2025-12-11"
+MEETING_NUMBER = 23
 LAYOUT = "meeting"
 
 
