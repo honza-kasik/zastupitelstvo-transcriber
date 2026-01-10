@@ -1,3 +1,4 @@
+import argparse
 import re
 import json
 from pathlib import Path
@@ -16,8 +17,8 @@ import ufal.morphodita as morphodita
 # CONFIG
 # =========================
 
-MORPHODITA_MODEL = "czech-morfflex2.1-pdtc2.0-250909.tagger"
-TRANSCRIPT_FILE = "prepis23.md"
+SCRIPT_DIR = Path(__file__).resolve().parent
+MORPHODITA_MODEL = str(SCRIPT_DIR / "czech-morfflex2.1-pdtc2.0-250909.tagger")
 
 SEGMENT_LEN = 300      # 5 min
 SEGMENT_OVERLAP = 120  # 2 min
@@ -35,6 +36,35 @@ UNWANTED_KEYWORDS = {
     "udělat", "řešit", "mluvit", "věc"
 }
 
+COMMON_MISTAKES = {
+    "písavný": "písemné",
+    "Litovla": "Litovle",
+    "Litového": "Litovel",
+    "Litovl": "Litovel",
+    "Litovélo": "Litovel",
+    "Stavěnový": "Stavební",
+    "Stavěvní": "Stavební",
+    "navědomý": "na vědomí",
+    "zápisě": "zápise",
+    "krátkrobým": "krátkodobým",
+    "Ritovel": "Litovel",
+    "rozpoštením": "rozpočtovým",
+    "Litovilsko": "Litovelsko",
+    "na Sovburgách": "v Nasobůrkách",
+    "psířiště": "psí hřiště",
+    " krum": " korun",
+    "zasadeny": "zasazeny",
+    "litovaské": "litovelské",
+    "po zemku": "pozemku",
+    "dobudové": "důvodové",
+    "Litovelezero": "Litovel s.r.o.",
+    "Žejrenko": "", #TODO
+    "řezové": "Březové",
+    "Alomouckem": "Olomouckém",
+    "Alomoucko": "Olomouckou",
+    "Alomouckej": "Olomoucké",
+    " toveláci": " litoveláci"
+}
 
 DOMAIN_HINTS = {
     "stavba": "průběh stavby",
@@ -142,6 +172,9 @@ def load_transcript(path) -> pd.DataFrame:
     for line in Path(path).read_text(encoding="utf-8").splitlines():
         line = line.strip()
 
+        for wrong in sorted(COMMON_MISTAKES, key=len, reverse=True):
+            line = line.replace(wrong, COMMON_MISTAKES[wrong])
+
         m = time_rx.match(line)
         if m:
             current_t = parse_time(m.group(1))
@@ -197,7 +230,7 @@ def merge_utterances(df) -> pd.DataFrame:
 # STEP 3: divide to segments SEGMENT_LEN long with SEGMENT_OVERLAP
 # =========================
 
-def build_segments(df: pd.DataFrame) -> pd.DataFrame:
+def build_segments(df: pd.DataFrame, outdir: Path) -> pd.DataFrame:
     t_min = df["t_start"].min()
     t_max = df["t_end"].max()
 
@@ -228,7 +261,7 @@ def build_segments(df: pd.DataFrame) -> pd.DataFrame:
 
         t += SEGMENT_LEN - SEGMENT_OVERLAP
 
-    Path("segments.json").write_text(
+    Path(outdir / "segments.json").write_text(
         json.dumps(segments, ensure_ascii=False, indent=2),
         encoding="utf-8"
     )
@@ -237,7 +270,7 @@ def build_segments(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================
-# STEP 4: MorphoDiTa LEMMATIZATION
+# STEP 4: MorphoDiTa LEMMATIZATION - NLP technique to find word base forms
 # =========================
 
 class Lemmatizer:
@@ -270,7 +303,7 @@ class Lemmatizer:
 
 
 # =========================
-# STEP 5: TF-IDF
+# STEP 5: TF-IDF - use statistics to determine which words are the most important ones
 # =========================
 
 def build_tfidf(segments: pd.DataFrame, lemmatizer: Lemmatizer):
@@ -442,8 +475,7 @@ def build_llm_query_payload(
     topics,
     min_minutes=2.0,
     max_topics=12,
-    max_evidence_per_topic=3
-):
+    max_evidence_per_topic=3):
     """
     Připraví strukturovaný vstup pro LLM z výstupu summarize_topics().
 
@@ -480,14 +512,35 @@ def build_llm_query_payload(
 # =========================
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--file", 
+                        type=Path,
+                        help="Transcription which should be used. Required.")
+    parser.add_argument("--outdir",
+                        "-o",
+                        type=Path,
+                        default=Path("out"),
+                        help="Output directory (default: ./out)"
+                    )
+
+    args = parser.parse_args()
+
+    if not args.file.is_file():
+        parser.error(f"{args.file} is not a valid file")
+
+    try:
+        args.outdir.mkdir(parents=True, exist_ok=True)
+    except PermissionError as e:
+        raise RuntimeError("Cannot create output directory") from e
+    
     print("Loading transcript...")
-    df = load_transcript(TRANSCRIPT_FILE)
+    df = load_transcript(args.file)
 
     print("Merging utterances...")
     df = merge_utterances(df)
 
     print("Building segments...")
-    segments = build_segments(df)
+    segments = build_segments(df, args.outdir)
 
     print("Lemmatizing + TF-IDF...")
     lemmatizer = Lemmatizer(MORPHODITA_MODEL)
@@ -506,7 +559,7 @@ def main():
         )
         print(", ".join(t["top_lemmas"]))
 
-    Path("topics.json").write_text(
+    Path(args.outdir / "topics.json").write_text(
         json.dumps(topics, ensure_ascii=False, indent=2),
         encoding="utf-8"
     )
@@ -518,7 +571,7 @@ def main():
         max_evidence_per_topic=3
     )
 
-    Path("llm_input.json").write_text(
+    Path(args.outdir / "llm_input.json").write_text(
         json.dumps(llm_payload, ensure_ascii=False, indent=2),
         encoding="utf-8"
     )

@@ -1,0 +1,39 @@
+= Deterministic municipal meeting summarizer
+
+Deterministic because it doesn't let the LLM decide about what is importat and what's not. Instead it uses following pipeline:
+
+1. Loading into internal data model
+2. Merge utterances of the same speaker
+3. Segment the meeting into chunks for easier processing by intervals with relevant metadata
+4. Perform NLP lemmatization to lower noise and unify differently formed words (škola, školy, školami...)
+5. Use Term Frequency-Inverse Document Frequency analysis to filter words which carry topic information
+6. Cluster segments into topics using Hierarchical Density-Based Spatial Clustering of Applications with Noise
+7. Determine whether topic is a discussion or monologue based on amount of active speakers and their involvement in the discussion
+8. Score representative sentences and use most representative sentences in the final LLM request
+9. Ask LLM, based on dense, structured data to create an article about the meeting.
+
+As you can see LLM is not authority in and step of the pipeline so the ouput is more repeatable and predictable.
+
+== What's included
+
+=== Transcriber
+
+Transcribed given audio into something like this:
+
+----
+[0:02:00] UNKNOWN:
+1, 2, 3, 4.
+
+[0:02:30] UNKNOWN:
+1, 2, 3, 4.
+----
+
+Transcriber uses whisper to achieve the goal, see relevant README.
+
+=== Analyzer
+
+Analyzes the transcription in steps mentioned above. Outputs files for next step.
+
+=== Article generator
+
+Takes analysis results and puts together a prompt for LLM and metadata for Jekyll template article.
