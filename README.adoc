@@ -151,11 +151,26 @@ python article-generator/generate_meeting_article.py \
 
 === Requirements
 
-* Python 3.10+
+* **Python 3.12** (recommended) or Python 3.10-3.12
 * ffmpeg (for audio processing)
 * HuggingFace account + token (for speaker diarization)
+* ~2GB disk space for full installation
 
-=== Setup
+=== Quick Setup
+
+[source,bash]
+----
+# Automated setup (recommended)
+./setup_env.sh
+
+# Activate environment
+source venv/bin/activate
+
+# Set HuggingFace token
+export HF_TOKEN="your_token_here"
+----
+
+=== Manual Setup
 
 1. Clone repository:
 +
@@ -165,25 +180,42 @@ git clone <repo-url>
 cd zastupitelstvo-transcriber
 ----
 
-2. Install Python dependencies:
+2. Create virtual environment with Python 3.12:
 +
 [source,bash]
 ----
-pip install -r requirements.txt
+python3.12 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
 ----
 
-3. Get HuggingFace token:
+3. Install dependencies:
++
+[source,bash]
+----
+# Full pipeline (all components)
+pip install -r requirements.txt
+
+# OR install only what you need:
+pip install -r requirements-article-generator.txt  # Minimal (~10MB)
+pip install -r requirements-analyzer.txt           # NLP (~500MB)
+pip install -r requirements-transcriber.txt        # Full ML (~2GB)
+----
+
+4. Get HuggingFace token (for transcriber):
 +
 * Create account at https://huggingface.co
 * Get token at https://huggingface.co/settings/tokens
 * Accept pyannote license at https://huggingface.co/pyannote/speaker-diarization
 
-4. Set environment variable:
+5. Set environment variable:
 +
 [source,bash]
 ----
 export HF_TOKEN="your_token_here"
 ----
+
+**Note**: For detailed environment setup and troubleshooting, see link:ENVIRONMENT.md[]
 
 == Usage
 
