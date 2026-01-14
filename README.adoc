@@ -79,6 +79,7 @@ After the pipeline completes:
 Traditional approach: Feed entire transcript to LLM → unpredictable, subjective results
 
 Our approach:
+
 * **Deterministic NLP** extracts topics using statistics (TF-IDF, clustering)
 * **Structured data** ensures repeatability
 * **LLM focused** on writing, not interpretation
@@ -109,6 +110,7 @@ Extracts topics from transcript using deterministic NLP pipeline.
 **Technologies**: MorphoDiTa (Czech lemmatization) + scikit-learn (TF-IDF) + HDBSCAN (clustering)
 
 **Pipeline**:
+
 1. Load transcript
 2. Merge consecutive utterances from same speaker
 3. Segment into overlapping time windows
@@ -132,6 +134,7 @@ python analyzer/analyze_meeting_topics.py \
 Generates LLM prompts and Jekyll templates from analyzed topics.
 
 **Features**:
+
 * Deterministic metadata (date, duration, meeting number)
 * Structured LLM prompts with topic evidence
 * Jekyll-compatible output
