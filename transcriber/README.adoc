@@ -1,13 +1,254 @@
-= How to use
+= Audio Transcriber
 
-. Prepare input with `prepare-audio.sh`
-. Change value of input file in `docker-compose.yml`
-. Create `.env` file with `HF_TOKEN` to be able to download transcribe and diarization models
-. Build and run containers:
+Transcribes audio files using Whisper and identifies speakers using pyannote.audio diarization.
+
+== Features
+
+* *Speech-to-text*: Uses OpenAI's Whisper model for accurate Czech transcription
+* *Speaker identification*: Automatically identifies and labels different speakers
+* *Timestamped output*: Each segment includes timestamp in HH:MM:SS format
+* *Compatible with analyzer*: Output format matches the analyzer pipeline input
+* *Docker support*: Run in isolated container with all dependencies
+
+== Requirements
+
+=== HuggingFace Token
+
+You need a HuggingFace token to download the speaker diarization models:
+
+1. Create account at https://huggingface.co
+2. Get token at https://huggingface.co/settings/tokens
+3. Accept pyannote license at https://huggingface.co/pyannote/speaker-diarization
+4. Set `HF_TOKEN` environment variable
+
+=== Dependencies
+
+If running locally (not in Docker):
+
+* Python 3.10+
+* ffmpeg
+* See `requirements.txt` for Python packages
+
+== Usage
+
+=== Using Docker (Recommended)
+
+1. Create `.env` file with your HuggingFace token:
++
+[source,bash]
+----
+echo "HF_TOKEN=your_token_here" > .env
+----
+
+2. Edit `docker-compose.yml` to set your input/output paths:
++
+[source,yaml]
+----
+command: >
+  python transcribe.py
+  --audio /app/input/your-audio-file.opus
+  --output /app/output/transcript.txt
+----
+
+3. Build and run:
 +
 [source,bash]
 ----
 docker compose build
 docker compose up
 ----
-. Wait 10–12 hours on CPU
+
+4. Wait for completion (10-12 hours on CPU for ~2 hour audio)
+
+=== Running Locally
+
+[source,bash]
+----
+# Set environment variable
+export HF_TOKEN="your_token_here"
+
+# Run transcription
+python transcribe.py \
+  --audio ../input/meeting.opus \
+  --output ../output/transcript.txt
+----
+
+== Command Line Options
+
+[source,bash]
+----
+python transcribe.py --help
+----
+
+Required arguments:
+
+* `--audio, -i`: Input audio file path
+* `--output, -o`: Output transcript file path
+
+Optional arguments:
+
+* `--model`: Whisper model size (default: medium)
+** Options: `tiny`, `base`, `small`, `medium`, `large-v2`, `large-v3`
+** Larger models are more accurate but slower
+* `--device`: Device to use (default: cpu)
+** Options: `cpu`, `cuda`
+* `--compute-type`: Computation precision (default: int8)
+** Options: `int8`, `float16`, `float32`
+** Lower precision is faster but less accurate
+
+== Output Format
+
+The transcriber outputs a plain text file with timestamped segments:
+
+----
+[0:02:15] SPEAKER_00:
+Dobrý večer, vážení zastupitelé.
+
+[0:02:30] SPEAKER_01:
+Dobrý večer.
+
+[0:02:45] SPEAKER_00:
+Zahajuji 22. zasedání zastupitelstva města Litovel.
+----
+
+This format is directly compatible with the analyzer pipeline.
+
+== Examples
+
+=== Basic Usage
+
+[source,bash]
+----
+python transcribe.py -i meeting.mp3 -o transcript.txt
+----
+
+=== Using Large Model for Better Accuracy
+
+[source,bash]
+----
+python transcribe.py \
+  --audio meeting.opus \
+  --output transcript.txt \
+  --model large-v3
+----
+
+=== Using GPU
+
+[source,bash]
+----
+python transcribe.py \
+  --audio meeting.wav \
+  --output transcript.txt \
+  --device cuda \
+  --compute-type float16
+----
+
+== Model Sizes and Performance
+
+[cols="1,1,1,1"]
+|===
+| Model | Accuracy | Speed (CPU) | Memory
+
+| tiny
+| ★★☆☆☆
+| ★★★★★
+| ~1 GB
+
+| base
+| ★★★☆☆
+| ★★★★☆
+| ~1 GB
+
+| small
+| ★★★☆☆
+| ★★★☆☆
+| ~2 GB
+
+| medium
+| ★★★★☆
+| ★★☆☆☆
+| ~5 GB
+
+| large-v3
+| ★★★★★
+| ★☆☆☆☆
+| ~10 GB
+|===
+
+== Makefile Integration
+
+The transcriber can be integrated into a Makefile workflow:
+
+[source,makefile]
+----
+# Makefile example
+INPUT_AUDIO = input/meeting.opus
+TRANSCRIPT = output/transcript.txt
+TOPICS = output/topics.json
+
+.PHONY: all transcribe analyze
+
+all: analyze
+
+# Step 1: Transcribe audio
+transcribe: $(TRANSCRIPT)
+
+$(TRANSCRIPT): $(INPUT_AUDIO)
+	python transcriber/transcribe.py \
+		--audio $< \
+		--output $@
+
+# Step 2: Analyze transcript
+analyze: $(TOPICS)
+
+$(TOPICS): $(TRANSCRIPT)
+	python analyzer/analyze_meeting_topics.py \
+		--file $< \
+		--outdir output/
+----
+
+== Troubleshooting
+
+=== "HF_TOKEN environment variable is required"
+
+Set your HuggingFace token:
+
+[source,bash]
+----
+export HF_TOKEN="your_token_here"
+----
+
+Or create `.env` file for Docker:
+
+[source,bash]
+----
+echo "HF_TOKEN=your_token_here" > .env
+----
+
+=== "Failed to load diarization model"
+
+Accept the pyannote license at:
+https://huggingface.co/pyannote/speaker-diarization
+
+=== Out of memory
+
+Try a smaller model:
+
+[source,bash]
+----
+python transcribe.py -i audio.mp3 -o output.txt --model small
+----
+
+Or use `int8` compute type for lower memory usage (already the default).
+
+=== Slow performance
+
+* Use GPU if available (`--device cuda`)
+* Use smaller model (`--model small` or `--model tiny`)
+* Increase thread count in docker-compose.yml:
++
+[source,yaml]
+----
+environment:
+  - OMP_NUM_THREADS=16  # Increase based on your CPU cores
+----

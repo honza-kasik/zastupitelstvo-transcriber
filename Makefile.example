@@ -1,0 +1,132 @@
+# Example Makefile for processing municipal meeting recordings
+# Copy to Makefile and adjust variables as needed
+
+# =========================
+# CONFIGURATION
+# =========================
+
+# Meeting metadata (adjust for each meeting)
+MEETING_DATE = 2025-01-15
+MEETING_NUMBER = 23
+
+# Input/output paths
+INPUT_AUDIO = input/meeting.opus
+OUTPUT_DIR = output
+
+# Processing options
+WHISPER_MODEL = medium        # Options: tiny, base, small, medium, large-v2, large-v3
+DEVICE = cpu                  # Options: cpu, cuda
+COMPUTE_TYPE = int8           # Options: int8, float16, float32
+JEKYLL_LAYOUT = meeting       # Jekyll layout name
+
+# Python interpreter
+PYTHON = python
+
+# =========================
+# TARGETS
+# =========================
+
+.PHONY: all process clean help
+
+# Default target: run complete pipeline
+all: process
+
+# Run complete pipeline with one command
+process: $(OUTPUT_DIR)/jekyll_draft.md
+	@echo ""
+	@echo "✅ Pipeline complete!"
+	@echo "Next steps:"
+	@echo "  1. Send $(OUTPUT_DIR)/llm_prompt.txt to your LLM"
+	@echo "  2. Copy LLM response into $(OUTPUT_DIR)/jekyll_draft.md"
+	@echo "  3. Review and publish"
+
+# Master pipeline (recommended approach)
+$(OUTPUT_DIR)/jekyll_draft.md: $(INPUT_AUDIO)
+	$(PYTHON) process_meeting.py \
+		--audio $< \
+		--date $(MEETING_DATE) \
+		--number $(MEETING_NUMBER) \
+		--outdir $(OUTPUT_DIR) \
+		--model $(WHISPER_MODEL) \
+		--device $(DEVICE) \
+		--compute-type $(COMPUTE_TYPE) \
+		--layout $(JEKYLL_LAYOUT)
+
+# Alternative: Run individual steps
+# Uncomment to use step-by-step approach instead of master pipeline
+
+# $(OUTPUT_DIR)/transcript.txt: $(INPUT_AUDIO)
+# 	$(PYTHON) transcriber/transcribe.py \
+# 		--audio $< \
+# 		--output $@ \
+# 		--model $(WHISPER_MODEL) \
+# 		--device $(DEVICE) \
+# 		--compute-type $(COMPUTE_TYPE)
+#
+# $(OUTPUT_DIR)/llm_input.json: $(OUTPUT_DIR)/transcript.txt
+# 	$(PYTHON) analyzer/analyze_meeting_topics.py \
+# 		--file $< \
+# 		--outdir $(OUTPUT_DIR)
+#
+# $(OUTPUT_DIR)/jekyll_draft.md: $(OUTPUT_DIR)/llm_input.json
+# 	$(PYTHON) article-generator/generate_meeting_article.py \
+# 		--topics $< \
+# 		--date $(MEETING_DATE) \
+# 		--number $(MEETING_NUMBER) \
+# 		--outdir $(OUTPUT_DIR) \
+# 		--layout $(JEKYLL_LAYOUT)
+
+# Clean output files
+clean:
+	@echo "Removing output files..."
+	rm -rf $(OUTPUT_DIR)/*
+	@echo "✅ Output directory cleaned"
+
+# Restart from transcription
+restart-transcription: clean
+	$(MAKE) process
+
+# Restart from analysis (keep transcript)
+restart-analysis:
+	rm -f $(OUTPUT_DIR)/topics.json $(OUTPUT_DIR)/llm_input.json $(OUTPUT_DIR)/llm_prompt.txt $(OUTPUT_DIR)/jekyll_draft.md
+	$(PYTHON) process_meeting.py \
+		--audio $(INPUT_AUDIO) \
+		--date $(MEETING_DATE) \
+		--number $(MEETING_NUMBER) \
+		--outdir $(OUTPUT_DIR) \
+		--skip-transcription
+
+# Restart from article generation (keep analysis)
+restart-article:
+	rm -f $(OUTPUT_DIR)/llm_prompt.txt $(OUTPUT_DIR)/jekyll_draft.md
+	$(PYTHON) process_meeting.py \
+		--audio $(INPUT_AUDIO) \
+		--date $(MEETING_DATE) \
+		--number $(MEETING_NUMBER) \
+		--outdir $(OUTPUT_DIR) \
+		--skip-transcription \
+		--skip-analysis
+
+# Show help
+help:
+	@echo "Municipal Meeting Processing Pipeline"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make              Run complete pipeline"
+	@echo "  make process      Run complete pipeline (same as default)"
+	@echo "  make clean        Remove all output files"
+	@echo "  make restart-transcription   Clean and start from beginning"
+	@echo "  make restart-analysis        Restart from analysis step"
+	@echo "  make restart-article         Restart from article generation"
+	@echo "  make help         Show this help message"
+	@echo ""
+	@echo "Configuration (edit Makefile):"
+	@echo "  MEETING_DATE      Meeting date (current: $(MEETING_DATE))"
+	@echo "  MEETING_NUMBER    Meeting number (current: $(MEETING_NUMBER))"
+	@echo "  INPUT_AUDIO       Input audio file (current: $(INPUT_AUDIO))"
+	@echo "  WHISPER_MODEL     Whisper model size (current: $(WHISPER_MODEL))"
+	@echo "  DEVICE            Processing device (current: $(DEVICE))"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make MEETING_DATE=2025-02-12 MEETING_NUMBER=24"
+	@echo "  make WHISPER_MODEL=large-v3 DEVICE=cuda"

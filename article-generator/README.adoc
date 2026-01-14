@@ -1,0 +1,467 @@
+= Article Generator
+
+Generates Jekyll-formatted meeting articles from analyzed topic data. Creates structured LLM prompts and prepares Jekyll templates with metadata.
+
+== Features
+
+* *Deterministic metadata*: Meeting info and duration calculated from analyzer data
+* *Structured LLM prompts*: Topic-focused prompts for consistent article generation
+* *Jekyll integration*: Valid front matter with YAML formatting
+* *Manual review workflow*: Generates drafts for human review before publication
+* *Makefile-ready*: Clean CLI interface for automation
+
+== Pipeline Position
+
+The article generator is the final step in the processing pipeline:
+
+----
+[Audio] → Transcriber → [Transcript] → Analyzer → [Topics] → Article Generator → [Article Draft]
+----
+
+== Requirements
+
+=== Python Dependencies
+
+[source,bash]
+----
+pip install pyyaml
+----
+
+All other dependencies are Python stdlib.
+
+=== Input
+
+Requires `llm_input.json` from the analyzer output containing:
+
+* Topic rankings
+* Time spent per topic
+* Topic types (monologue, discussion, procedural)
+* Domain hints
+* Representative evidence sentences
+
+== Usage
+
+=== Basic Usage
+
+[source,bash]
+----
+python generate_meeting_article.py \
+  --topics output/llm_input.json \
+  --date 2025-01-15 \
+  --number 23
+----
+
+This generates:
+
+* `llm_prompt.txt` - Structured prompt for LLM
+* `jekyll_draft.md` - Jekyll page template
+
+=== With Custom Output Directory
+
+[source,bash]
+----
+python generate_meeting_article.py \
+  -i output/llm_input.json \
+  -d 2025-01-15 \
+  -n 23 \
+  -o articles/meeting-23/
+----
+
+=== With Custom Jekyll Layout
+
+[source,bash]
+----
+python generate_meeting_article.py \
+  -i output/llm_input.json \
+  -d 2025-01-15 \
+  -n 23 \
+  --layout custom-meeting
+----
+
+== Command Line Options
+
+[source,bash]
+----
+python generate_meeting_article.py --help
+----
+
+Required arguments:
+
+* `--topics, -i`: Input topics JSON file (from analyzer)
+* `--date, -d`: Meeting date in YYYY-MM-DD format
+* `--number, -n`: Meeting sequence number
+
+Optional arguments:
+
+* `--outdir, -o`: Output directory (default: same as topics file)
+* `--layout`: Jekyll layout name (default: meeting)
+* `--prompt-file`: Custom LLM prompt filename (default: llm_prompt.txt)
+* `--jekyll-file`: Custom Jekyll draft filename (default: jekyll_draft.md)
+
+== Output Files
+
+=== LLM Prompt (`llm_prompt.txt`)
+
+Structured prompt for LLM with:
+
+* Clear instructions for article generation
+* Topic data with evidence sentences
+* Guidelines for neutral, factual writing
+
+Example:
+----
+Jsi redaktor regionálního zpravodajství.
+Píšeš věcný a neutrální článek o průběhu jednání zastupitelstva.
+
+Pravidla:
+- piš SOUVISLÝ TEXT, bez nadpisů a sekcí
+- postupuj chronologicky podle pořadí témat
+...
+
+Podklady (seřazeno podle významu):
+[JSON with topics]
+----
+
+=== Jekyll Draft (`jekyll_draft.md`)
+
+Jekyll page with YAML front matter and placeholders:
+
+----
+---
+layout: meeting
+title: Jednání zastupitelstva – 2025-01-15
+meeting_date: '2025-01-15'
+meeting_number: 23
+meeting_duration: 2 h 15 min
+meeting_duration_minutes: 135
+summary: <<< VLOŽ SHRNUTÍ (3-4 VĚTY) >>>
+---
+
+<<< VLOŽ TEXT ČLÁNKU ZDE >>>
+----
+
+== Workflow
+
+=== Complete Pipeline
+
+1. **Transcribe** audio file:
++
+[source,bash]
+----
+python transcriber/transcribe.py \
+  --audio input/meeting.opus \
+  --output output/transcript.txt
+----
+
+2. **Analyze** transcript:
++
+[source,bash]
+----
+python analyzer/analyze_meeting_topics.py \
+  --file output/transcript.txt \
+  --outdir output/
+----
+
+3. **Generate** article materials:
++
+[source,bash]
+----
+python article-generator/generate_meeting_article.py \
+  --topics output/llm_input.json \
+  --date 2025-01-15 \
+  --number 23
+----
+
+4. **Send** `llm_prompt.txt` to your LLM (Claude, GPT-4, etc.)
+
+5. **Copy** LLM output into `jekyll_draft.md`
+
+6. **Review** and publish
+
+=== Using an LLM
+
+Send the generated `llm_prompt.txt` to your preferred LLM:
+
+**Claude (via web or API)**:
+----
+Copy/paste llm_prompt.txt content into Claude
+----
+
+**OpenAI GPT**:
+----
+Copy/paste llm_prompt.txt content into ChatGPT
+----
+
+**Local LLM** (Ollama, LM Studio):
+----
+cat llm_prompt.txt | ollama run llama2
+----
+
+== Makefile Integration
+
+The article generator integrates seamlessly into build pipelines:
+
+[source,makefile]
+----
+# Complete pipeline in Makefile
+INPUT_AUDIO = input/meeting.opus
+TRANSCRIPT = output/transcript.txt
+LLM_INPUT = output/llm_input.json
+ARTICLE_DRAFT = output/jekyll_draft.md
+
+MEETING_DATE = 2025-01-15
+MEETING_NUMBER = 23
+
+.PHONY: all transcribe analyze article
+
+all: article
+
+# Step 1: Transcribe
+transcribe: $(TRANSCRIPT)
+
+$(TRANSCRIPT): $(INPUT_AUDIO)
+	python transcriber/transcribe.py \
+		--audio $< \
+		--output $@
+
+# Step 2: Analyze
+analyze: $(LLM_INPUT)
+
+$(LLM_INPUT): $(TRANSCRIPT)
+	python analyzer/analyze_meeting_topics.py \
+		--file $< \
+		--outdir output/
+
+# Step 3: Generate article materials
+article: $(ARTICLE_DRAFT)
+
+$(ARTICLE_DRAFT): $(LLM_INPUT)
+	python article-generator/generate_meeting_article.py \
+		--topics $< \
+		--date $(MEETING_DATE) \
+		--number $(MEETING_NUMBER) \
+		--outdir output/
+
+# Clean intermediate files
+clean:
+	rm -rf output/*
+----
+
+== Metadata Generation
+
+Metadata is **deterministically calculated**, never generated by LLM:
+
+* `layout`: Jekyll layout (from --layout argument)
+* `title`: "Jednání zastupitelstva – [date]"
+* `meeting_date`: Meeting date (from --date argument)
+* `meeting_number`: Meeting number (from --number argument)
+* `meeting_duration`: "X h Y min" (calculated from topic durations)
+* `meeting_duration_minutes`: Total minutes (calculated from topic durations)
+
+This ensures consistency and prevents LLM hallucination of dates/numbers.
+
+== LLM Prompt Design
+
+The prompt is designed to:
+
+1. **Focus the LLM** on factual, neutral writing
+2. **Provide structured data** (topic rankings, evidence)
+3. **Prevent hallucination** (no metadata, strict "only what's in evidence" rule)
+4. **Maintain chronology** (topics ordered by importance)
+5. **Distinguish discussion types** (monologue vs discussion vs procedural)
+
+The LLM **does NOT know**:
+
+* Jekyll structure or front matter
+* Meeting metadata (date, number, duration)
+* Section headers or organization
+
+This separation ensures deterministic metadata and lets LLM focus on content.
+
+== Customization
+
+=== Custom Jekyll Layout
+
+[source,bash]
+----
+python generate_meeting_article.py \
+  -i llm_input.json \
+  -d 2025-01-15 \
+  -n 23 \
+  --layout community-meeting
+----
+
+=== Custom Output Filenames
+
+[source,bash]
+----
+python generate_meeting_article.py \
+  -i llm_input.json \
+  -d 2025-01-15 \
+  -n 23 \
+  --prompt-file meeting-23-prompt.txt \
+  --jekyll-file meeting-23-draft.md
+----
+
+=== Modifying the Prompt
+
+Edit `build_llm_prompt()` function in `generate_meeting_article.py`:
+
+[source,python]
+----
+def build_llm_prompt(prepared_topics):
+    return f"""
+Jsi redaktor regionálního zpravodajství.
+[Your custom instructions here]
+
+Podklady:
+{json.dumps(prepared_topics, ensure_ascii=False, indent=2)}
+""".strip()
+----
+
+== Troubleshooting
+
+=== "Topics file not found"
+
+Ensure analyzer has run successfully:
+
+[source,bash]
+----
+ls -la output/llm_input.json
+----
+
+If missing, run analyzer:
+
+[source,bash]
+----
+python analyzer/analyze_meeting_topics.py \
+  --file transcript.txt \
+  --outdir output/
+----
+
+=== "Invalid date format"
+
+Date must be in YYYY-MM-DD format:
+
+[source,bash]
+----
+# Correct
+--date 2025-01-15
+
+# Wrong
+--date 15-01-2025
+--date 2025/01/15
+--date 15.1.2025
+----
+
+=== "Invalid JSON in topics file"
+
+The topics file may be corrupted. Re-run analyzer:
+
+[source,bash]
+----
+python analyzer/analyze_meeting_topics.py \
+  --file transcript.txt \
+  --outdir output/
+----
+
+=== Empty or Poor Quality Output
+
+Check that:
+
+1. Analyzer found topics (topics.json should have multiple entries)
+2. Topics have evidence sentences
+3. LLM prompt has sufficient data
+
+View the generated prompt:
+
+[source,bash]
+----
+cat output/llm_prompt.txt
+----
+
+== Design Philosophy
+
+=== Why Separate Metadata?
+
+Metadata (date, number, duration) is generated **deterministically** to:
+
+* Prevent LLM hallucination of dates
+* Ensure consistency across articles
+* Make metadata searchable/filterable
+* Keep LLM focused on content
+
+=== Why Manual LLM Step?
+
+The generator **doesn't call LLMs automatically** because:
+
+* Users may prefer different LLMs (Claude, GPT, local models)
+* Allows review before API costs
+* Enables experimentation with prompts
+* Keeps tool simple and focused
+
+=== Why Jekyll?
+
+Jekyll is a static site generator perfect for:
+
+* Version-controlled content
+* Simple deployment
+* No database overhead
+* Fast, secure sites
+
+But the output format can be adapted for other systems (Hugo, Gatsby, etc.) by modifying `build_jekyll_draft()`.
+
+== Examples
+
+=== Example 1: Basic Pipeline
+
+[source,bash]
+----
+# Analyze existing transcript
+python analyzer/analyze_meeting_topics.py \
+  --file transcripts/meeting-23.txt \
+  --outdir output/
+
+# Generate article materials
+python article-generator/generate_meeting_article.py \
+  --topics output/llm_input.json \
+  --date 2025-01-15 \
+  --number 23
+
+# Send llm_prompt.txt to Claude
+# Copy response to jekyll_draft.md
+# Review and publish
+----
+
+=== Example 2: Multiple Meetings
+
+[source,bash]
+----
+# Meeting 23
+python article-generator/generate_meeting_article.py \
+  -i output/meeting-23/llm_input.json \
+  -d 2025-01-15 \
+  -n 23 \
+  -o articles/meeting-23/
+
+# Meeting 24
+python article-generator/generate_meeting_article.py \
+  -i output/meeting-24/llm_input.json \
+  -d 2025-02-12 \
+  -n 24 \
+  -o articles/meeting-24/
+----
+
+=== Example 3: Makefile Automation
+
+[source,bash]
+----
+# Set meeting metadata
+export MEETING_DATE=2025-01-15
+export MEETING_NUMBER=23
+
+# Run full pipeline
+make all
+
+# Result: output/jekyll_draft.md ready for LLM output
+----

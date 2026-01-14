@@ -1,39 +1,533 @@
-= Deterministic municipal meeting summarizer
+= Deterministic Municipal Meeting Summarizer
 
-Deterministic because it doesn't let the LLM decide about what is importat and what's not. Instead it uses following pipeline:
+A deterministic pipeline for processing municipal council meeting recordings into structured, factual articles. Uses NLP and clustering instead of relying solely on LLM interpretation.
 
-1. Loading into internal data model
-2. Merge utterances of the same speaker
-3. Segment the meeting into chunks for easier processing by intervals with relevant metadata
-4. Perform NLP lemmatization to lower noise and unify differently formed words (škola, školy, školami...)
-5. Use Term Frequency-Inverse Document Frequency analysis to filter words which carry topic information
-6. Cluster segments into topics using Hierarchical Density-Based Spatial Clustering of Applications with Noise
-7. Determine whether topic is a discussion or monologue based on amount of active speakers and their involvement in the discussion
-8. Score representative sentences and use most representative sentences in the final LLM request
-9. Ask LLM, based on dense, structured data to create an article about the meeting.
+== Overview
 
-As you can see LLM is not authority in and step of the pipeline so the ouput is more repeatable and predictable.
+This tool processes audio recordings of municipal meetings through three stages:
 
-== What's included
+1. **Transcription**: Audio → timestamped text with speaker identification
+2. **Analysis**: Text → structured topics using NLP and clustering
+3. **Article Generation**: Topics → LLM prompt and Jekyll draft
 
-=== Transcriber
+The key principle is *determinism* - the LLM only generates article text from pre-analyzed, structured data. It doesn't decide what's important or make subjective interpretations.
 
-Transcribed given audio into something like this:
+== Quick Start
 
+=== One-Command Pipeline
+
+Process a complete meeting with a single command:
+
+[source,bash]
 ----
-[0:02:00] UNKNOWN:
-1, 2, 3, 4.
-
-[0:02:30] UNKNOWN:
-1, 2, 3, 4.
+python process_meeting.py \
+  --audio input/meeting.opus \
+  --date 2025-01-15 \
+  --number 23
 ----
 
-Transcriber uses whisper to achieve the goal, see relevant README.
+This runs all three stages automatically:
 
-=== Analyzer
+* Transcribes audio (10-12 hours on CPU for 2-hour meeting)
+* Analyzes transcript (2-5 minutes)
+* Generates article materials (< 1 second)
 
-Analyzes the transcription in steps mentioned above. Outputs files for next step.
+Output in `output/`:
+----
+output/
+├── transcript.txt       # Timestamped transcript with speakers
+├── topics.json          # Full topic analysis
+├── llm_input.json       # Filtered topics for LLM
+├── llm_prompt.txt       # Structured LLM prompt
+└── jekyll_draft.md      # Jekyll page template
+----
 
-=== Article generator
+=== Next Steps
 
-Takes analysis results and puts together a prompt for LLM and metadata for Jekyll template article.
+After the pipeline completes:
+
+1. Send `llm_prompt.txt` to your preferred LLM (Claude, GPT, etc.)
+2. Copy LLM response into `jekyll_draft.md`
+3. Review and publish
+
+== Architecture
+
+=== Pipeline
+
+----
+[Audio Recording]
+       ↓
+   Transcriber (Whisper + pyannote)
+       ↓
+[Timestamped Transcript with Speakers]
+       ↓
+   Analyzer (NLP + TF-IDF + HDBSCAN)
+       ↓
+[Structured Topics with Evidence]
+       ↓
+   Article Generator
+       ↓
+[LLM Prompt + Jekyll Draft]
+       ↓
+   LLM (Manual step)
+       ↓
+[Published Article]
+----
+
+=== Why Deterministic?
+
+Traditional approach: Feed entire transcript to LLM → unpredictable, subjective results
+
+Our approach:
+* **Deterministic NLP** extracts topics using statistics (TF-IDF, clustering)
+* **Structured data** ensures repeatability
+* **LLM focused** on writing, not interpretation
+* **Predictable output** - same input → same topics
+
+== Components
+
+=== 1. Transcriber
+
+Converts audio to timestamped text with speaker labels.
+
+**Technologies**: Whisper (transcription) + pyannote.audio (speaker diarization)
+
+**Usage**:
+[source,bash]
+----
+python transcriber/transcribe.py \
+  --audio input/meeting.opus \
+  --output output/transcript.txt
+----
+
+**Documentation**: link:transcriber/README.adoc[]
+
+=== 2. Analyzer
+
+Extracts topics from transcript using deterministic NLP pipeline.
+
+**Technologies**: MorphoDiTa (Czech lemmatization) + scikit-learn (TF-IDF) + HDBSCAN (clustering)
+
+**Pipeline**:
+1. Load transcript
+2. Merge consecutive utterances from same speaker
+3. Segment into overlapping time windows
+4. Lemmatize Czech text to base forms
+5. Build TF-IDF vectors
+6. Cluster segments into topics using HDBSCAN
+7. Extract topic metadata and representative sentences
+
+**Usage**:
+[source,bash]
+----
+python analyzer/analyze_meeting_topics.py \
+  --file output/transcript.txt \
+  --outdir output/
+----
+
+**Documentation**: See `analyzer/analyze_meeting_topics.py` docstrings
+
+=== 3. Article Generator
+
+Generates LLM prompts and Jekyll templates from analyzed topics.
+
+**Features**:
+* Deterministic metadata (date, duration, meeting number)
+* Structured LLM prompts with topic evidence
+* Jekyll-compatible output
+
+**Usage**:
+[source,bash]
+----
+python article-generator/generate_meeting_article.py \
+  --topics output/llm_input.json \
+  --date 2025-01-15 \
+  --number 23
+----
+
+**Documentation**: link:article-generator/README.adoc[]
+
+== Installation
+
+=== Requirements
+
+* **Python 3.12** (recommended) or Python 3.10-3.12
+* ffmpeg (for audio processing)
+* HuggingFace account + token (for speaker diarization)
+* ~2GB disk space for full installation
+
+=== Quick Setup
+
+[source,bash]
+----
+# Automated setup (recommended)
+./setup_env.sh
+
+# Activate environment
+source venv/bin/activate
+
+# Set HuggingFace token
+export HF_TOKEN="your_token_here"
+----
+
+=== Manual Setup
+
+1. Clone repository:
++
+[source,bash]
+----
+git clone <repo-url>
+cd zastupitelstvo-transcriber
+----
+
+2. Create virtual environment with Python 3.12:
++
+[source,bash]
+----
+python3.12 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+----
+
+3. Install dependencies:
++
+[source,bash]
+----
+# Full pipeline (all components)
+pip install -r requirements.txt
+
+# OR install only what you need:
+pip install -r requirements-article-generator.txt  # Minimal (~10MB)
+pip install -r requirements-analyzer.txt           # NLP (~500MB)
+pip install -r requirements-transcriber.txt        # Full ML (~2GB)
+----
+
+4. Get HuggingFace token (for transcriber):
++
+* Create account at https://huggingface.co
+* Get token at https://huggingface.co/settings/tokens
+* Accept pyannote license at https://huggingface.co/pyannote/speaker-diarization
+
+5. Set environment variable:
++
+[source,bash]
+----
+export HF_TOKEN="your_token_here"
+----
+
+**Note**: For detailed environment setup and troubleshooting, see link:ENVIRONMENT.md[]
+
+== Usage
+
+=== Basic Pipeline
+
+[source,bash]
+----
+# Process complete meeting
+python process_meeting.py \
+  --audio input/meeting.opus \
+  --date 2025-01-15 \
+  --number 23
+----
+
+=== Advanced Options
+
+[source,bash]
+----
+# Use GPU for faster transcription
+python process_meeting.py \
+  -i input/meeting.opus \
+  -d 2025-01-15 \
+  -n 23 \
+  --device cuda
+
+# Use larger model for better accuracy
+python process_meeting.py \
+  -i input/meeting.opus \
+  -d 2025-01-15 \
+  -n 23 \
+  --model large-v3
+
+# Custom output directory
+python process_meeting.py \
+  -i input/meeting.opus \
+  -d 2025-01-15 \
+  -n 23 \
+  -o meetings/meeting-23/
+----
+
+=== Skip Steps (Restart Pipeline)
+
+If a step has already completed, skip it:
+
+[source,bash]
+----
+# Skip transcription (use existing transcript)
+python process_meeting.py \
+  -i input/meeting.opus \
+  -d 2025-01-15 \
+  -n 23 \
+  --skip-transcription
+
+# Skip both transcription and analysis
+python process_meeting.py \
+  -i input/meeting.opus \
+  -d 2025-01-15 \
+  -n 23 \
+  --skip-transcription \
+  --skip-analysis
+----
+
+=== Run Individual Steps
+
+You can also run each component separately:
+
+[source,bash]
+----
+# Step 1: Transcription
+python transcriber/transcribe.py \
+  --audio input/meeting.opus \
+  --output output/transcript.txt
+
+# Step 2: Analysis
+python analyzer/analyze_meeting_topics.py \
+  --file output/transcript.txt \
+  --outdir output/
+
+# Step 3: Article generation
+python article-generator/generate_meeting_article.py \
+  --topics output/llm_input.json \
+  --date 2025-01-15 \
+  --number 23
+----
+
+== Makefile Integration
+
+Create a `Makefile` for repeatable builds:
+
+[source,makefile]
+----
+# Meeting metadata
+MEETING_DATE = 2025-01-15
+MEETING_NUMBER = 23
+
+# Files
+INPUT_AUDIO = input/meeting.opus
+OUTPUT_DIR = output
+
+.PHONY: all clean
+
+# Complete pipeline
+all: $(OUTPUT_DIR)/jekyll_draft.md
+
+# Master pipeline (recommended)
+$(OUTPUT_DIR)/jekyll_draft.md: $(INPUT_AUDIO)
+	python process_meeting.py \
+		--audio $< \
+		--date $(MEETING_DATE) \
+		--number $(MEETING_NUMBER) \
+		--outdir $(OUTPUT_DIR)
+
+# Clean output
+clean:
+	rm -rf $(OUTPUT_DIR)/*
+
+# Run pipeline
+.PHONY: process
+process:
+	make all
+----
+
+Usage:
+[source,bash]
+----
+make all              # Run complete pipeline
+make clean            # Remove output files
+----
+
+== Time Estimates
+
+For a 2-hour meeting audio file:
+
+[cols="1,1,1"]
+|===
+| Step | CPU | GPU
+
+| Transcription
+| 10-12 hours
+| 1-2 hours
+
+| Analysis
+| 2-5 minutes
+| 2-5 minutes
+
+| Article Generation
+| < 1 second
+| < 1 second
+
+| *Total*
+| *~12 hours*
+| *~2 hours*
+|===
+
+== Output Format
+
+=== Transcript Format
+
+[source]
+----
+[0:02:15] SPEAKER_00:
+Dobrý večer, vážení zastupitelé.
+
+[0:02:30] SPEAKER_01:
+Dobrý večer.
+----
+
+=== Topics JSON
+
+[source,json]
+----
+[
+  {
+    "order": 1,
+    "time_minutes": 15.3,
+    "topic_type": "discussion",
+    "topic_hint": "průběh stavby, místní komunikace",
+    "evidence": [
+      "Sentence with evidence...",
+      "Another sentence..."
+    ]
+  }
+]
+----
+
+=== Jekyll Draft
+
+[source,markdown]
+----
+---
+layout: meeting
+title: Jednání zastupitelstva – 2025-01-15
+meeting_date: '2025-01-15'
+meeting_number: 23
+meeting_duration: 2 h 15 min
+meeting_duration_minutes: 135
+summary: <<< VLOŽ SHRNUTÍ (3-4 VĚTY) >>>
+---
+
+<<< VLOŽ TEXT ČLÁNKU ZDE >>>
+----
+
+== Troubleshooting
+
+=== "HF_TOKEN environment variable is required"
+
+Set your HuggingFace token:
+
+[source,bash]
+----
+export HF_TOKEN="your_token_here"
+----
+
+Or create `.env` file in `transcriber/`:
+
+[source,bash]
+----
+echo "HF_TOKEN=your_token_here" > transcriber/.env
+----
+
+=== Out of Memory
+
+Use smaller Whisper model:
+
+[source,bash]
+----
+python process_meeting.py \
+  -i input/meeting.opus \
+  -d 2025-01-15 \
+  -n 23 \
+  --model small
+----
+
+=== Slow Transcription
+
+Options to speed up:
+
+* Use GPU: `--device cuda`
+* Use smaller model: `--model small`
+* Use lower precision: `--compute-type int8` (already default)
+
+=== Pipeline Interrupted
+
+Restart from the last completed step:
+
+[source,bash]
+----
+# If transcription completed but analysis failed
+python process_meeting.py \
+  -i input/meeting.opus \
+  -d 2025-01-15 \
+  -n 23 \
+  --skip-transcription
+
+# If both completed but article generation failed
+python process_meeting.py \
+  -i input/meeting.opus \
+  -d 2025-01-15 \
+  -n 23 \
+  --skip-transcription \
+  --skip-analysis
+----
+
+== Design Philosophy
+
+=== Separation of Concerns
+
+* **Transcriber**: Audio → Text (no interpretation)
+* **Analyzer**: Text → Topics (statistical, deterministic)
+* **Article Generator**: Topics → Prompt (metadata generation)
+* **LLM**: Prompt → Article (writing only)
+
+Each component has a single, clear responsibility.
+
+=== Determinism Over Flexibility
+
+The analyzer uses **deterministic algorithms** (TF-IDF, HDBSCAN) rather than LLM interpretation. This ensures:
+
+* Repeatability (same input → same topics)
+* Predictability (no unexpected interpretations)
+* Debuggability (can inspect each step)
+* Transparency (clear why topics were selected)
+
+=== LLM as Tool, Not Oracle
+
+The LLM receives:
+* Structured topic data
+* Representative evidence sentences
+* Clear instructions
+
+The LLM does NOT:
+* Decide what's important
+* Generate metadata
+* Make subjective judgments
+
+== Contributing
+
+Components are independent - improvements to one don't affect others:
+
+* `transcriber/` - Audio processing
+* `analyzer/` - NLP and clustering
+* `article-generator/` - Prompt and template generation
+* `process_meeting.py` - Pipeline orchestration
+
+== License
+
+[Add your license here]
+
+== Credits
+
+* **Whisper** by OpenAI - Speech recognition
+* **pyannote.audio** - Speaker diarization
+* **MorphoDiTa** - Czech morphological analysis
+* **HDBSCAN** - Density-based clustering
+* **scikit-learn** - TF-IDF vectorization
